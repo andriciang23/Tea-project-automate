@@ -1,0 +1,77 @@
+{
+  "_comment": "Ready-to-apply SEO content per active product, keyed by Shopify handle. seo_title <=60 chars, meta_description 150-160 chars. Apply via scripts/apply-seo.js or ask Claude to apply through the Shopify MCP. Body copy intentionally omitted here — keep existing descriptions unless rewritten in the .md files.",
+  "products": [
+    {
+      "handle": "dark-roast",
+      "product_id": "gid://shopify/Product/4474915389578",
+      "seo_title": "Hojicha Dark Roast \"Aka\" Malaysia | HojichaYa",
+      "meta_description": "Smoky, deep-roasted Japanese hojicha with notes of vanilla & warm charcoal. Low-caffeine loose leaf, from RM35. Shop authentic hojicha in Malaysia at HojichaYa.",
+      "primary_keyword": "hojicha dark roast malaysia",
+      "image_alt": "HojichaYa Hojicha Dark Roast Aka, roasted Japanese green tea loose leaf, 80g — Malaysia"
+    },
+    {
+      "handle": "hojicha-kyo",
+      "product_id": "gid://shopify/Product/4681022341258",
+      "seo_title": "Charcoal Roasted Hojicha \"Kyo\" Malaysia | HojichaYa",
+      "meta_description": "Traditional charcoal-roasted hojicha, sweet & smoky with no bitterness. Low-caffeine Japanese green tea, from RM35. Buy hojicha loose leaf in Malaysia at HojichaYa.",
+      "primary_keyword": "charcoal roasted hojicha malaysia",
+      "image_alt": "HojichaYa Hojicha Kyo charcoal roasted Japanese green tea loose leaf, 80g — Malaysia"
+    },
+    {
+      "handle": "hojicha-kaori",
+      "product_id": "gid://shopify/Product/4474972438666",
+      "seo_title": "Hojicha Powder Malaysia — Latte & Baking | HojichaYa",
+      "meta_description": "Stone-roasted hojicha powder \"Kaori\" for lattes, baking & desserts. Low caffeine, rich roasted aroma, from RM45. Buy hojicha powder in Malaysia at HojichaYa.",
+      "primary_keyword": "hojicha powder malaysia",
+      "image_alt": "HojichaYa Hojicha Powder Kaori, roasted green tea powder for latte and baking, 50g — Malaysia"
+    },
+    {
+      "handle": "hojicha-tea-bags",
+      "product_id": "gid://shopify/Product/4475542012042",
+      "seo_title": "Hojicha Tea Bags Malaysia — Low Caffeine | HojichaYa",
+      "meta_description": "Signature \"Aka\" hojicha in convenient teabags — smoky, soothing & low caffeine. 20 bags RM40. Buy Japanese hojicha tea bags in Malaysia at HojichaYa.",
+      "primary_keyword": "hojicha tea bags malaysia",
+      "image_alt": "HojichaYa Hojicha Aka teabags, low-caffeine roasted Japanese green tea, 20 bags — Malaysia"
+    },
+    {
+      "handle": "genmaicha",
+      "product_id": "gid://shopify/Product/4490845094026",
+      "seo_title": "Genmaicha Malaysia — Roasted Rice Green Tea | HojichaYa",
+      "meta_description": "Genmaicha \"Midori\": Japanese green tea with roasted brown rice, nutty & comforting. Loose leaf from RM30. Buy genmaicha in Malaysia at HojichaYa.",
+      "primary_keyword": "genmaicha malaysia",
+      "image_alt": "HojichaYa Genmaicha Midori, Japanese green tea with roasted rice loose leaf, 80g — Malaysia"
+    },
+    {
+      "handle": "genmaicha-teabags",
+      "product_id": "gid://shopify/Product/4716206325898",
+      "seo_title": "Genmaicha Tea Bags Malaysia | HojichaYa",
+      "meta_description": "Genmaicha \"Midori\" roasted-rice green tea in easy teabags — nutty, warming, everyday. 20 bags RM40. Buy genmaicha tea bags in Malaysia at HojichaYa.",
+      "primary_keyword": "genmaicha tea bags malaysia",
+      "image_alt": "HojichaYa Genmaicha Midori teabags, Japanese roasted rice green tea, 20 bags — Malaysia"
+    },
+    {
+      "handle": "genmaicha-powder",
+      "product_id": "gid://shopify/Product/5480081522842",
+      "seo_title": "Genmaicha Powder Malaysia — Latte & Baking | HojichaYa",
+      "meta_description": "Genmaicha powder \"Asa-Midori\" — sencha + roasted rice, nutty & smooth for lattes and baking. From RM45. Buy genmaicha powder in Malaysia at HojichaYa.",
+      "primary_keyword": "genmaicha powder malaysia",
+      "image_alt": "HojichaYa Genmaicha Powder Asa-Midori for latte and baking, 50g — Malaysia"
+    },
+    {
+      "handle": "kimidori-matcha",
+      "product_id": "gid://shopify/Product/6207817384108",
+      "seo_title": "Matcha Powder Malaysia — Uji Japanese Matcha | HojichaYa",
+      "meta_description": "Kimidori Matcha: vibrant Uji-grown Japanese matcha powder, mellow & smooth for lattes & whisking. From RM50. Buy authentic matcha in Malaysia at HojichaYa.",
+      "primary_keyword": "matcha powder malaysia",
+      "image_alt": "HojichaYa Kimidori Matcha, premium Uji Japanese matcha powder, 50g — Malaysia"
+    },
+    {
+      "handle": "japanese-tea-powder-trio",
+      "product_id": "gid://shopify/Product/6217891152044",
+      "seo_title": "Matcha Hojicha Genmaicha Powder Set | HojichaYa",
+      "meta_description": "The Japanese Tea Powder Trio: matcha, hojicha & genmaicha powders for bakers & baristas. From RM135. Buy the tea powder bundle in Malaysia at HojichaYa.",
+      "primary_keyword": "japanese tea powder set malaysia",
+      "image_alt": "HojichaYa Japanese Tea Powder Trio — matcha, hojicha and genmaicha powders bundle — Malaysia"
+    }
+  ]
+}
