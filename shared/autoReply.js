@@ -1,9 +1,10 @@
 /**
- * Intent matching + reply selection.
+ * Intent matching + reply selection (shared across all channels).
  *
  * Strategy: simple, transparent keyword scoring. It's fast, free, predictable, and easy
- * for the shop owner to tune by editing knowledgeBase.js. (You can later swap getReply()
- * for an LLM call — same signature — without changing the server.)
+ * for the shop owner to tune by editing knowledgeBase.js. The Shopify chatbot can layer
+ * an LLM on top of this (see shopify-chatbot/src/llm.js); this remains the zero-cost,
+ * always-available fallback.
  */
 
 const { intents, fallback, handoffIntent } = require("./knowledgeBase");
@@ -13,7 +14,7 @@ function normalize(text) {
 }
 
 /**
- * Score every intent by how many of its keywords appear in the message.
+ * Score an intent by how many of its keywords appear in the message.
  * Longer keyword matches count more (so "what is hojicha" beats a stray "hi").
  */
 function scoreIntent(msg, intent) {

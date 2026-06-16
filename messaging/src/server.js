@@ -11,7 +11,7 @@
 require("dotenv").config();
 const express = require("express");
 
-const { getReply } = require("./autoReply");
+const { getReply } = require("../../shared/autoReply");
 const whatsapp = require("./channels/whatsapp");
 const instagram = require("./channels/instagram");
 

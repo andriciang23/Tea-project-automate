@@ -5,7 +5,7 @@
  *   node src/replyTest.js "your message"  # test one message
  */
 
-const { getReply } = require("./autoReply");
+const { getReply } = require("../../shared/autoReply");
 
 const samples = process.argv[2]
   ? [process.argv[2]]

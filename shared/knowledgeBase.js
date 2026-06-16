@@ -1,5 +1,6 @@
 /**
- * HojichaYa FAQ knowledge base.
+ * HojichaYa FAQ knowledge base — shared by the messaging bot (WhatsApp/Instagram)
+ * and the Shopify storefront chatbot, so answers are maintained in ONE place.
  *
  * Each intent has:
  *   - keywords:  lowercase substrings/triggers that map a message to this intent

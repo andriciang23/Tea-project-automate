@@ -1,0 +1,22 @@
+{%- comment -%}
+  HojichaYa chat widget loader.
+
+  Install:
+  1. In the Shopify admin: Online Store → Themes → ⋯ → Edit code.
+  2. Under "Snippets" click "Add a new snippet", name it `hojichaya-chat`, and paste
+     this file's contents.
+  3. Open `layout/theme.liquid` and add this line just before the closing </body> tag:
+        {% render 'hojichaya-chat' %}
+  4. Replace BACKEND_URL below with your deployed chatbot URL (see this folder's README).
+{%- endcomment -%}
+
+{%- assign backend_url = 'https://YOUR-CHATBOT-URL.example.com' -%}
+
+<script>
+  window.HOJICHAYA_CHAT = {
+    backendUrl: {{ backend_url | json }},
+    greeting: "Hi! 🍵 I'm the HojichaYa assistant. Ask me about our teas, shipping, brewing, or wholesale."
+  };
+</script>
+<link rel="stylesheet" href="{{ backend_url }}/widget.css">
+<script src="{{ backend_url }}/widget.js" defer></script>

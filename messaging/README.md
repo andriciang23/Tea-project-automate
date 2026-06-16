@@ -53,15 +53,18 @@ Meta — perfect for end-to-end testing with a tunnel.
 | File | Role |
 | --- | --- |
 | `src/server.js` | Express app; webhook verify + inbound routing for both channels |
-| `src/autoReply.js` | Keyword-scored intent matching → reply + handoff decision |
-| `src/knowledgeBase.js` | **Edit this** — the FAQ (intents, keywords, replies) |
+| `../shared/autoReply.js` | Keyword-scored intent matching → reply + handoff decision |
+| `../shared/knowledgeBase.js` | **Edit this** — the FAQ (intents, keywords, replies) |
 | `src/channels/whatsapp.js` | Parse + send for WhatsApp Cloud API |
 | `src/channels/instagram.js` | Parse + send for Instagram Messaging |
 | `src/replyTest.js` | Offline tester |
 
+> The FAQ in [`../shared/`](../shared) is shared with the [Shopify chatbot](../shopify-chatbot) —
+> edit it once and both the messaging bot and the website widget stay in sync.
+
 ## Customizing replies
 
-Open [`src/knowledgeBase.js`](./src/knowledgeBase.js) and edit the `intents` array — add
+Open [`../shared/knowledgeBase.js`](../shared/knowledgeBase.js) and edit the `intents` array — add
 keywords and reply text. Anything with `handoff: true` flags the message for a human. The
 placeholders (prices, free-shipping threshold) should be updated to match your live store.
 
