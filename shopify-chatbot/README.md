@@ -45,6 +45,9 @@ Check the mode at <http://localhost:3100/health>.
 
 ## Deploy + embed in Shopify
 
+> 📘 **New to hosting? Follow the step-by-step [DEPLOY.md](./DEPLOY.md)** — a guided Render
+> walkthrough (free tier, ~15 min, no computer left on).
+
 1. **Deploy the backend** to any Node host (Render, Railway, Fly, a VPS). Set the env vars,
    especially `ALLOWED_ORIGINS=https://hojichaya.com,https://www.hojichaya.com`. Note the
    public URL, e.g. `https://hojichaya-bot.onrender.com`.

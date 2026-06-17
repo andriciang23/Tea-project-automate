@@ -1,0 +1,31 @@
+# One-click-ish deploy blueprint for Render (https://render.com).
+# In Render: New → Blueprint → connect this repo → it reads this file.
+# Spins up the Shopify chatbot as an always-on web service.
+#
+# Full walkthrough: shopify-chatbot/DEPLOY.md
+
+services:
+  - type: web
+    name: hojichaya-chatbot
+    runtime: node
+    rootDir: shopify-chatbot
+    plan: free            # change to "starter" (~$7/mo) to avoid cold-start spin-down
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true       # redeploys automatically when you push to the branch
+    envVars:
+      # Restrict who can call the bot to your storefront origins.
+      - key: ALLOWED_ORIGINS
+        value: https://hojichaya.com,https://www.hojichaya.com
+      # Per-IP request cap (abuse/cost guard).
+      - key: RATE_LIMIT_PER_MIN
+        value: "20"
+      # Model used in LLM mode (only matters once ANTHROPIC_API_KEY is set).
+      - key: CHATBOT_MODEL
+        value: claude-haiku-4-5
+      # LLM mode. Leave UNSET for free keyword mode. To enable, add it in the
+      # Render dashboard (Environment tab) — never commit a real key.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+    # Render sets PORT automatically; the server reads process.env.PORT.

@@ -33,3 +33,10 @@ This repo automates three pillars of the business:
 
 > ⚠️ No automation in this repo touches your live store, ad spend, or customer messages
 > until you explicitly configure credentials and approve it.
+
+## Running it 24/7
+
+The chatbot and messaging bot are servers that need a host to run around the clock — they
+do **not** require Claude or your computer to be on. See
+[`shopify-chatbot/DEPLOY.md`](./shopify-chatbot/DEPLOY.md) for a free, step-by-step Render
+deployment. SEO and Ads work needs no server.
