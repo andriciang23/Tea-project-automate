@@ -24,9 +24,17 @@ You (WhatsApp) ──▶ Meta WhatsApp Cloud API ──▶ POST /webhook (this a
 
 - **"Order for Jane Doe: 2 jasmine green + a 250g oolong"** → creates a draft order,
   replies with the draft name, total, and admin link.
-- **"How much is the oolong?" / "do we still have jasmine in stock?"** → looks it up live.
+- **"How much is the oolong?" / "what's our cost on jasmine?" / "do we still have it in stock?"**
+  → looks it up live (price, unit cost, SKU, and quantity all come from Shopify).
 - **"What's my store URL?"** → returns it.
-- **Ambiguous order** ("send John the usual") → asks you to clarify; no draft created.
+- **Ambiguous order** ("send John the usual", or an order for a product that has
+  several sizes) → asks you to clarify, listing the available options; no draft created.
+
+### Data source
+
+Nothing is read from a local file or stored snapshot. Every product name, variant,
+price, **unit cost**, SKU, and stock level is fetched **live from your Shopify store**
+at the moment you message the bot, so it can never act on stale data.
 
 Stack: Node.js + TypeScript, Express webhook, the Anthropic SDK (`claude-opus-4-8`
 by default), and the Shopify Admin GraphQL API.
@@ -111,13 +119,26 @@ Check that:
 2. An order creates a draft in Shopify admin, tagged `whatsapp`, **not** marked paid.
 3. An ambiguous order ("send John the usual") gets a clarifying question — no draft.
 
+## Reliability details
+
+- **Multi-variant products** are handled: give the bot the size/option (e.g. "250g
+  oolong") and it picks the matching variant. If the size is missing or ambiguous,
+  it asks you and lists the available variants with prices.
+- **Stock check** — when a draft is created, the bot flags any line where the
+  ordered quantity exceeds tracked stock (the draft is still created; you decide).
+- **Duplicate-safe** — Meta can deliver the same webhook more than once; messages
+  are de-duplicated by ID so you never get a double draft order.
+- **Ordered processing** — back-to-back messages in one chat are serialized, so the
+  conversation can't get tangled.
+- **Sender allow-list + signature check** — only your own number(s) are answered,
+  and every webhook's `X-Hub-Signature-256` is verified against your app secret.
+
 ## Notes / limitations (v1)
 
 - Text messages only — media/voice notes get a "please type it as text" reply.
 - Conversation history is in-memory and resets when the process restarts.
 - Product matching is intentionally conservative: if a name maps to more than one
-  product, or to a product with multiple variants, the bot asks you which one
-  rather than guessing.
+  product, the bot asks you which one rather than guessing.
 - No auto-charging — you always review the draft and send the invoice from Shopify.
 
 ## Environment variables

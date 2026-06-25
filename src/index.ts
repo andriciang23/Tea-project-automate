@@ -1,7 +1,22 @@
 import express, { type Request, type Response } from "express";
 import { config } from "./config.js";
-import { verifySignature, parseInbound, sendText } from "./whatsapp.js";
+import { verifySignature, parseInboundMessages, sendText } from "./whatsapp.js";
 import { handleMessage } from "./agent.js";
+
+// Bounded set of recently-seen message IDs for at-least-once webhook dedup.
+const seenMessageIds = new Set<string>();
+const SEEN_LIMIT = 1000;
+
+function alreadyProcessed(id: string): boolean {
+  if (seenMessageIds.has(id)) return true;
+  seenMessageIds.add(id);
+  if (seenMessageIds.size > SEEN_LIMIT) {
+    // Drop the oldest entry (insertion order) to keep the set bounded.
+    const oldest = seenMessageIds.values().next().value;
+    if (oldest !== undefined) seenMessageIds.delete(oldest);
+  }
+  return false;
+}
 
 const app = express();
 
@@ -45,35 +60,39 @@ app.post("/webhook", (req: Request, res: Response) => {
 });
 
 async function processWebhook(body: unknown): Promise<void> {
-  const inbound = parseInbound(body);
-  if (!inbound) return; // status callback or non-message event
-
-  // Security: only the merchant's own number(s) may use the bot.
-  if (!config.ALLOWED_SENDERS.includes(inbound.from)) {
-    console.warn(`Ignoring message from non-allowed sender: ${inbound.from}`);
-    return;
-  }
-
-  try {
-    if (inbound.type !== "text") {
-      await sendText(
-        inbound.from,
-        "I can only read text right now. Please type the order or question as text.",
-      );
-      return;
+  for (const inbound of parseInboundMessages(body)) {
+    // Security: only the merchant's own number(s) may use the bot.
+    if (!config.ALLOWED_SENDERS.includes(inbound.from)) {
+      console.warn(`Ignoring message from non-allowed sender: ${inbound.from}`);
+      continue;
+    }
+    // Dedup: Meta may deliver the same message more than once.
+    if (alreadyProcessed(inbound.id)) {
+      console.log(`Skipping duplicate message ${inbound.id}`);
+      continue;
     }
 
-    const reply = await handleMessage(inbound.from, inbound.text);
-    await sendText(inbound.from, reply);
-  } catch (err) {
-    console.error("Error handling message:", err);
     try {
-      await sendText(
-        inbound.from,
-        "Sorry — something went wrong on my end. Please try again in a moment.",
-      );
-    } catch {
-      // best effort
+      if (inbound.type !== "text") {
+        await sendText(
+          inbound.from,
+          "I can only read text right now. Please type the order or question as text.",
+        );
+        continue;
+      }
+
+      const reply = await handleMessage(inbound.from, inbound.text);
+      await sendText(inbound.from, reply);
+    } catch (err) {
+      console.error("Error handling message:", err);
+      try {
+        await sendText(
+          inbound.from,
+          "Sorry — something went wrong on my end. Please try again in a moment.",
+        );
+      } catch {
+        // best effort
+      }
     }
   }
 }

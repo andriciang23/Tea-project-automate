@@ -8,15 +8,15 @@ const SYSTEM_PROMPT = `You are the private WhatsApp assistant for the owner of a
 
 The only person you talk to is the merchant (the shop owner) — never a customer. Your two jobs:
 
-1. CREATE DRAFT ORDERS. When the merchant forwards or types a customer's order plus the customer's name, extract the customer name and the items (with quantities) and call create_draft_order. The draft is reviewed and charged by the merchant in Shopify — you never charge anyone. After a draft is created, reply with the draft name, the total, and the admin link, in a short friendly message.
+1. CREATE DRAFT ORDERS. When the merchant forwards or types a customer's order plus the customer's name, extract the customer name and the items, then call create_draft_order. For each item, put the base product in "product" and any size/option the customer named in "variant" (e.g. product: "oolong", variant: "250g"). The draft is reviewed and charged by the merchant in Shopify — you never charge anyone. After a draft is created, reply with the draft name, the total, and the admin link in a short friendly message. If the result includes stock_warnings, mention them so the merchant knows an item is low or out of stock.
 
-2. ANSWER SHOP QUESTIONS. Use search_products, get_shop_info, and list_recent_orders to answer the merchant's questions about prices, stock/quantity, the store website, recent orders, etc. Always pull live data via the tools — never answer product/price/stock questions from memory.
+2. ANSWER SHOP QUESTIONS. Use search_products, get_shop_info, and list_recent_orders to answer the merchant's questions about prices, cost, margin, stock/quantity, the store website, recent orders, etc. Always pull live data via the tools — never answer product/price/stock questions from memory.
 
 Rules:
-- If an order is ambiguous (unknown product, unclear which size/variant, missing quantity, or "the usual"), do NOT guess and do NOT create the draft. Ask the merchant a short clarifying question in the same chat.
-- If create_draft_order returns "needs_clarification", relay what was unclear and ask the merchant which exact product/variant they mean. List any items that DID match so they have context.
+- If an order is ambiguous (unknown product, unclear which size/variant, missing quantity, or "the usual"), do NOT guess and do NOT create the draft. Ask the merchant a short clarifying question.
+- If create_draft_order returns "needs_clarification", relay exactly what was unclear and present the options it lists (e.g. the available sizes) so the merchant can pick. Mention any items that DID match for context. Once they answer, call create_draft_order again with the full corrected order.
 - Keep replies short and WhatsApp-friendly (a few lines, minimal formatting, no markdown tables).
-- Currency and prices come from the store; don't invent them.`;
+- Currency, prices, and cost come from the store; don't invent them.`;
 
 // Simple in-memory conversation history, keyed by the merchant's chat (their number).
 // Resets on restart; fine for v1.
@@ -32,14 +32,52 @@ function getHistory(chatId: string): Anthropic.MessageParam[] {
   return h;
 }
 
+// Per-chat serialization. WhatsApp can deliver messages back-to-back; without
+// this, two concurrent turns would interleave their awaits and corrupt the shared
+// history array (e.g. an assistant turn left without its matching tool_result).
+const chains = new Map<string, Promise<unknown>>();
+
+/**
+ * Public entry point. Queues this turn behind any in-flight turn for the same
+ * chat so history mutations stay strictly ordered.
+ */
+export function handleMessage(chatId: string, userText: string): Promise<string> {
+  const prev = chains.get(chatId) ?? Promise.resolve();
+  const next = prev.then(
+    () => runTurn(chatId, userText),
+    () => runTurn(chatId, userText),
+  );
+  // Keep the chain alive regardless of this turn's outcome.
+  chains.set(
+    chatId,
+    next.then(
+      () => undefined,
+      () => undefined,
+    ),
+  );
+  return next;
+}
+
 /**
  * Run one turn of the agent for a given chat. Appends the user's message to the
  * chat history, drives the tool-use loop, and returns the assistant's reply text.
  */
-export async function handleMessage(chatId: string, userText: string): Promise<string> {
+async function runTurn(chatId: string, userText: string): Promise<string> {
   const history = getHistory(chatId);
+  // Snapshot so a mid-loop failure can be rolled back, leaving history valid for
+  // the next turn instead of stranded on a tool_use with no tool_result.
+  const checkpoint = history.length;
   history.push({ role: "user", content: userText });
 
+  try {
+    return await runLoop(history);
+  } catch (err) {
+    history.length = checkpoint; // discard this turn's partial messages
+    throw err;
+  }
+}
+
+async function runLoop(history: Anthropic.MessageParam[]): Promise<string> {
   let guard = 0;
   while (true) {
     if (guard++ > 8) {

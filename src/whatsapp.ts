@@ -19,6 +19,7 @@ export function verifySignature(rawBody: Buffer, header: string | undefined): bo
 }
 
 export interface InboundMessage {
+  id: string; // WhatsApp message ID (wamid...), used for dedup
   from: string; // sender's WhatsApp number, E.164 without "+"
   text: string;
   name?: string; // sender's WhatsApp profile name, if provided
@@ -26,26 +27,33 @@ export interface InboundMessage {
 }
 
 /**
- * Pull the first inbound message out of a WhatsApp webhook payload.
- * Returns null for status callbacks (delivered/read receipts) and empty payloads.
+ * Pull every inbound message out of a WhatsApp webhook payload. Iterates all
+ * entries/changes so nothing is dropped, and skips status callbacks (delivered/
+ * read receipts) and malformed events.
  */
-export function parseInbound(body: any): InboundMessage | null {
+export function parseInboundMessages(body: any): InboundMessage[] {
+  const out: InboundMessage[] = [];
   try {
-    const value = body?.entry?.[0]?.changes?.[0]?.value;
-    const message = value?.messages?.[0];
-    if (!message) return null; // status callback or unrelated event
-
-    const from: string = message.from;
-    const name: string | undefined = value?.contacts?.[0]?.profile?.name;
-
-    if (message.type === "text") {
-      return { from, name, type: "text", text: message.text?.body ?? "" };
+    for (const entry of body?.entry ?? []) {
+      for (const change of entry?.changes ?? []) {
+        const value = change?.value;
+        const contactName: string | undefined = value?.contacts?.[0]?.profile?.name;
+        for (const message of value?.messages ?? []) {
+          if (!message?.id || !message?.from) continue;
+          out.push({
+            id: message.id,
+            from: message.from,
+            name: contactName,
+            type: message.type ?? "unknown",
+            text: message.type === "text" ? message.text?.body ?? "" : "",
+          });
+        }
+      }
     }
-    // Non-text (image, audio, etc.) — surface the type so the caller can reply politely.
-    return { from, name, type: message.type, text: "" };
   } catch {
-    return null;
+    // Malformed payload — return whatever we managed to parse.
   }
+  return out;
 }
 
 /** Send a text message back to a WhatsApp number via the Cloud API. */

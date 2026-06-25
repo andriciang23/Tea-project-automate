@@ -27,13 +27,17 @@ export async function adminGraphQL<T = any>(
   return json.data as T;
 }
 
-export interface VariantMatch {
-  variantId: string;
-  productTitle: string;
-  variantTitle: string;
+export interface VariantNode {
+  id: string;
+  title: string;
   price: string;
-  available: number | null;
   sku: string | null;
+  available: number | null;
+  unitCost: string | null;
+}
+
+export interface VariantMatch extends VariantNode {
+  productTitle: string;
 }
 
 export interface ProductSummary {
@@ -44,46 +48,61 @@ export interface ProductSummary {
     price: string;
     sku: string | null;
     available: number | null;
+    unitCost: string | null;
   }[];
 }
 
+// Shared GraphQL fragment for the variant fields we care about.
+const VARIANT_FIELDS = `
+  id
+  title
+  price
+  sku
+  inventoryQuantity
+  inventoryItem { unitCost { amount } }
+`;
+
+interface RawProductNode {
+  title: string;
+  status?: string;
+  variants: {
+    edges: {
+      node: {
+        id: string;
+        title: string;
+        price: string;
+        sku: string | null;
+        inventoryQuantity: number | null;
+        inventoryItem: { unitCost: { amount: string } | null } | null;
+      };
+    }[];
+  };
+}
+
+function toVariantNodes(product: RawProductNode): VariantNode[] {
+  return product.variants.edges.map((v) => ({
+    id: v.node.id,
+    title: v.node.title,
+    price: v.node.price,
+    sku: v.node.sku,
+    available: v.node.inventoryQuantity,
+    unitCost: v.node.inventoryItem?.unitCost?.amount ?? null,
+  }));
+}
+
 /**
- * Search products by free text. Returns a flat, model-friendly summary used both
- * for answering questions ("how much is the oolong?") and as the basis for
- * resolving order line items.
+ * Search products by free text. Returns a flat, model-friendly summary used for
+ * answering questions about prices, cost, SKUs, and stock.
  */
 export async function searchProducts(queryText: string, first = 10): Promise<ProductSummary[]> {
-  const data = await adminGraphQL<{
-    products: {
-      edges: {
-        node: {
-          title: string;
-          status: string;
-          variants: {
-            edges: {
-              node: {
-                title: string;
-                price: string;
-                sku: string | null;
-                inventoryQuantity: number | null;
-              };
-            }[];
-          };
-        };
-      }[];
-    };
-  }>(
+  const data = await adminGraphQL<{ products: { edges: { node: RawProductNode }[] } }>(
     `query SearchProducts($q: String!, $first: Int!) {
       products(first: $first, query: $q) {
         edges {
           node {
             title
             status
-            variants(first: 25) {
-              edges {
-                node { title price sku inventoryQuantity }
-              }
-            }
+            variants(first: 25) { edges { node { ${VARIANT_FIELDS} } } }
           }
         }
       }
@@ -93,52 +112,64 @@ export async function searchProducts(queryText: string, first = 10): Promise<Pro
 
   return data.products.edges.map((e) => ({
     title: e.node.title,
-    status: e.node.status,
-    variants: e.node.variants.edges.map((v) => ({
-      title: v.node.title,
-      price: v.node.price,
-      sku: v.node.sku,
-      available: v.node.inventoryQuantity,
+    status: e.node.status ?? "UNKNOWN",
+    variants: toVariantNodes(e.node).map((v) => ({
+      title: v.title,
+      price: v.price,
+      sku: v.sku,
+      available: v.available,
+      unitCost: v.unitCost,
     })),
   }));
 }
 
+export type ResolveResult =
+  | { status: "matched"; variant: VariantMatch }
+  | { status: "ambiguous_product"; query: string; candidates: string[] }
+  | {
+      status: "ambiguous_variant";
+      productTitle: string;
+      hint?: string;
+      options: { title: string; price: string; available: number | null }[];
+    }
+  | { status: "not_found"; query: string };
+
+function normalize(s: string): string {
+  return s.toLowerCase().replace(/[\s_-]+/g, "");
+}
+
+/** Pick variants whose title matches a free-text hint (e.g. "250g", "large"). */
+function matchVariantsByHint(variants: VariantNode[], hint: string): VariantNode[] {
+  const h = normalize(hint);
+  if (!h) return [];
+  // Prefer an exact normalized title match; fall back to substring containment
+  // in either direction (so "250g oolong" matches the "250g" variant title).
+  const exact = variants.filter((v) => normalize(v.title) === h);
+  if (exact.length > 0) return exact;
+  return variants.filter((v) => {
+    const t = normalize(v.title);
+    return t.length > 0 && (h.includes(t) || t.includes(h));
+  });
+}
+
 /**
- * Resolve a product name to a single best variant for a draft order line item.
- * Returns null when there is no confident match, which tells the agent to ask
- * the merchant to clarify rather than guess.
+ * Resolve an order line ("250g oolong" x2) to a single Shopify variant.
+ *
+ * The result tells the caller exactly why a resolution is uncertain so the agent
+ * can ask the merchant a precise question instead of guessing:
+ *  - matched           → use this variant
+ *  - ambiguous_product → the name matched several products; ask which one
+ *  - ambiguous_variant → one product, but multiple sizes/options; ask which variant
+ *  - not_found         → nothing matched
  */
-export async function findVariant(name: string): Promise<VariantMatch | null> {
-  const data = await adminGraphQL<{
-    products: {
-      edges: {
-        node: {
-          title: string;
-          variants: {
-            edges: {
-              node: {
-                id: string;
-                title: string;
-                price: string;
-                sku: string | null;
-                inventoryQuantity: number | null;
-              };
-            }[];
-          };
-        };
-      }[];
-    };
-  }>(
-    `query FindVariant($q: String!) {
+export async function resolveOrderItem(name: string, variantHint?: string): Promise<ResolveResult> {
+  const data = await adminGraphQL<{ products: { edges: { node: RawProductNode }[] } }>(
+    `query ResolveItem($q: String!) {
       products(first: 5, query: $q) {
         edges {
           node {
             title
-            variants(first: 25) {
-              edges {
-                node { id title price sku inventoryQuantity }
-              }
-            }
+            variants(first: 50) { edges { node { ${VARIANT_FIELDS} } } }
           }
         }
       }
@@ -147,28 +178,36 @@ export async function findVariant(name: string): Promise<VariantMatch | null> {
   );
 
   const products = data.products.edges;
-  if (products.length === 0) return null;
-
-  // Confident only when the search points to a single product. If the text is
-  // vague and matches several products, return null so the agent asks.
-  if (products.length > 1) return null;
+  if (products.length === 0) return { status: "not_found", query: name };
+  if (products.length > 1) {
+    return {
+      status: "ambiguous_product",
+      query: name,
+      candidates: products.map((p) => p.node.title),
+    };
+  }
 
   const product = products[0].node;
-  const variants = product.variants.edges;
-  if (variants.length === 0) return null;
+  const variants = toVariantNodes(product);
+  if (variants.length === 0) return { status: "not_found", query: name };
 
-  // Single-variant products are unambiguous; multi-variant ones need the agent
-  // to specify which (size/flavour), so treat that as "needs clarification".
-  if (variants.length > 1) return null;
+  const toMatch = (v: VariantNode): VariantMatch => ({ ...v, productTitle: product.title });
 
-  const v = variants[0].node;
+  // Single variant ("Default Title") — unambiguous.
+  if (variants.length === 1) return { status: "matched", variant: toMatch(variants[0]) };
+
+  // Multiple variants — use the hint to pick one.
+  if (variantHint && variantHint.trim()) {
+    const hits = matchVariantsByHint(variants, variantHint);
+    if (hits.length === 1) return { status: "matched", variant: toMatch(hits[0]) };
+  }
+
+  // No hint, or the hint matched zero / multiple variants — ask the merchant.
   return {
-    variantId: v.id,
+    status: "ambiguous_variant",
     productTitle: product.title,
-    variantTitle: v.title,
-    price: v.price,
-    available: v.inventoryQuantity,
-    sku: v.sku,
+    hint: variantHint,
+    options: variants.map((v) => ({ title: v.title, price: v.price, available: v.available })),
   };
 }
 
@@ -253,6 +292,11 @@ export async function listRecentOrders(first = 10): Promise<RecentOrder[]> {
   }));
 }
 
+/** Escape a value for safe interpolation into a Shopify search query string. */
+function escapeQueryValue(v: string): string {
+  return v.replace(/["\\]/g, "\\$&");
+}
+
 /** Find an existing customer by name, or create one. Best-effort; returns null on failure. */
 export async function upsertCustomer(name: string): Promise<string | null> {
   const trimmed = name.trim();
@@ -262,14 +306,18 @@ export async function upsertCustomer(name: string): Promise<string | null> {
   const firstName = parts[0];
   const lastName = parts.slice(1).join(" ") || undefined;
 
-  // Try to find an existing customer by name first.
+  // Try to find an existing customer by name first. Quote + escape the values so
+  // names with spaces or special characters don't break the search query.
+  const q = lastName
+    ? `first_name:"${escapeQueryValue(firstName)}" AND last_name:"${escapeQueryValue(lastName)}"`
+    : `first_name:"${escapeQueryValue(firstName)}"`;
   const search = await adminGraphQL<{
-    customers: { edges: { node: { id: string; displayName: string } }[] };
+    customers: { edges: { node: { id: string } }[] };
   }>(
     `query FindCustomer($q: String!) {
-      customers(first: 1, query: $q) { edges { node { id displayName } } }
+      customers(first: 1, query: $q) { edges { node { id } } }
     }`,
-    { q: `first_name:${firstName}${lastName ? ` AND last_name:${lastName}` : ""}` },
+    { q },
   );
   const existing = search.customers.edges[0]?.node.id;
   if (existing) return existing;
