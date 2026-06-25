@@ -1,0 +1,26 @@
+{
+  "name": "tea-whatsapp-shopify-agent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A personal WhatsApp assistant that turns forwarded customer orders into Shopify draft orders and answers questions about the shop.",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test-agent": "tsx scripts/test-agent.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.68.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
