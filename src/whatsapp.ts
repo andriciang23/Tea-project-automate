@@ -66,8 +66,10 @@ export function parseInboundMessages(body: any): InboundMessage[] {
 
 /** Send a text message back to a WhatsApp number via the Cloud API. */
 export async function sendText(to: string, body: string): Promise<void> {
+  // WhatsApp rejects empty message bodies — never send a blank reply.
+  const safeBody = body && body.trim() ? body : "Done.";
   // WhatsApp caps a single text message body at 4096 chars — chunk longer replies.
-  const chunks = chunkText(body, 4000);
+  const chunks = chunkText(safeBody, 4000);
   for (const chunk of chunks) {
     const res = await fetch(
       `${GRAPH_BASE}/${config.WHATSAPP_PHONE_NUMBER_ID}/messages`,

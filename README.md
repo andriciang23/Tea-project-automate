@@ -10,6 +10,9 @@ The bot only ever talks to **you** (the merchant). It never messages your
 customers, and it never charges anyone — it creates draft orders that you review
 and invoice from Shopify.
 
+> New here? Read [`FAQ.md`](./FAQ.md) for a plain-language explanation (does it use
+> Claude? is it always on? does it cost a subscription?).
+
 ## How it works
 
 ```

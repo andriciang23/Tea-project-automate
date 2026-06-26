@@ -71,9 +71,16 @@ async function processWebhook(body: unknown): Promise<void> {
           await sendText(inbound.from, "I couldn't open that photo — please resend it or type the order as text.");
           continue;
         }
+        // Claude vision accepts only these image formats.
+        const supported = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+        const mimeType = media.mimeType.split(";")[0].trim().toLowerCase();
+        if (!supported.includes(mimeType)) {
+          await sendText(inbound.from, "That image format isn't supported — please send a JPG or PNG, or type the order.");
+          continue;
+        }
         reply = await handleImageMessage(inbound.from, {
           base64: media.base64,
-          mimeType: media.mimeType,
+          mimeType,
           caption: inbound.caption,
         });
       } else {

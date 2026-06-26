@@ -86,13 +86,16 @@ async function runTurn(chatId: string, content: Anthropic.MessageParam["content"
   // Snapshot so a mid-loop failure can be rolled back, leaving history valid for
   // the next turn instead of stranded on a tool_use with no tool_result.
   const checkpoint = history.length;
-  history.push({ role: "user", content });
+  // Keep a direct reference to the message we push: trimHistory may shift indices
+  // by the time we scrub, so indexing by position would target the wrong message.
+  const userMsg: Anthropic.MessageParam = { role: "user", content };
+  history.push(userMsg);
 
   try {
     const reply = await runLoop(history);
     // The image was only needed for the turn that read it. Strip the base64 so it
     // isn't re-uploaded on every later turn or bloated into the persisted store.
-    scrubImageData(history[checkpoint]);
+    scrubImageData(userMsg);
     store.persist();
     return reply;
   } catch (err) {
@@ -120,11 +123,17 @@ async function runLoop(history: Anthropic.MessageParam[]): Promise<string> {
 
     const response = await client.messages.create({
       model: config.ANTHROPIC_MODEL,
-      max_tokens: 2048,
+      max_tokens: 4096,
       system: SYSTEM_PROMPT,
       tools,
       messages: history,
     });
+
+    if (response.stop_reason === "max_tokens") {
+      // Output was truncated — a partial tool_use would be invalid to act on.
+      // Drop this assistant turn and ask the merchant to simplify.
+      return "That turned into a lot at once — could you send it in a couple of smaller messages?";
+    }
 
     // Record the assistant turn (text + any tool_use blocks) verbatim.
     history.push({ role: "assistant", content: response.content });
