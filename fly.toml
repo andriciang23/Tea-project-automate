@@ -1,0 +1,35 @@
+# Fly.io config — deploys the bot to Singapore, always-on, with a persistent disk.
+# Rename "app" to something unique before `fly deploy` (or let `fly launch` set it).
+app = "tea-whatsapp-agent"
+primary_region = "sin" # Singapore — closest Fly region to Malaysia
+
+[build]
+
+[env]
+  PORT = "3000"
+  # Use a cheaper model to cut the Claude bill (optional):
+  # ANTHROPIC_MODEL = "claude-sonnet-4-6"
+
+# The webhook must always be reachable, so don't let the machine stop.
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    method = "get"
+    path = "/health"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+
+# Keeps data/store.json (chat history, dedup, regulars) across restarts/deploys.
+[mounts]
+  source = "tea_data"
+  destination = "/app/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

@@ -61,6 +61,14 @@ scripts/
   test-agent.ts CLI to chat with the agent locally (no WhatsApp needed)
 ```
 
+## Going live
+
+To run the bot 24/7 on a public HTTPS URL (required by Meta), see
+[`DEPLOY.md`](./DEPLOY.md) — step-by-step for Fly.io (Singapore, easiest) or your
+own Singapore VPS. **Prompt caching is enabled**, so the repeated instructions and
+tool list within an order are billed at a fraction after the first call; you can
+also set `ANTHROPIC_MODEL=claude-sonnet-4-6` (or `claude-haiku-4-5`) to cut costs.
+
 ## Setup
 
 ### 1. Install

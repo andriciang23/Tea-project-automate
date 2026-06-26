@@ -124,10 +124,22 @@ async function runLoop(history: Anthropic.MessageParam[]): Promise<string> {
     const response = await client.messages.create({
       model: config.ANTHROPIC_MODEL,
       max_tokens: 4096,
-      system: SYSTEM_PROMPT,
+      // Cache the static prefix (tools + system) so it's reused across turns.
+      system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
       tools,
-      messages: history,
+      // A breakpoint on the last message caches the whole conversation prefix, so
+      // the repeated tool-loop calls within one order read history from cache
+      // instead of re-sending it at full price.
+      messages: withCacheBreakpoint(history),
     });
+
+    if (process.env.DEBUG_TOKENS) {
+      const u = response.usage;
+      console.log(
+        `[tokens] in=${u.input_tokens} cache_read=${u.cache_read_input_tokens ?? 0} ` +
+          `cache_write=${u.cache_creation_input_tokens ?? 0} out=${u.output_tokens}`,
+      );
+    }
 
     if (response.stop_reason === "max_tokens") {
       // Output was truncated — a partial tool_use would be invalid to act on.
@@ -165,6 +177,35 @@ async function runLoop(history: Anthropic.MessageParam[]): Promise<string> {
     trimHistory(history);
     return text || "Done.";
   }
+}
+
+/**
+ * Return a shallow copy of the history with a cache breakpoint on the last
+ * message's last content block. We don't mutate the stored history, so no
+ * cache_control markers accumulate (which would blow the 4-breakpoint limit).
+ */
+function withCacheBreakpoint(history: Anthropic.MessageParam[]): Anthropic.MessageParam[] {
+  if (history.length === 0) return history;
+  const out = history.slice();
+  const last = out[out.length - 1];
+  const ephemeral = { type: "ephemeral" as const };
+
+  if (typeof last.content === "string") {
+    out[out.length - 1] = {
+      ...last,
+      content: [{ type: "text", text: last.content, cache_control: ephemeral }],
+    };
+  } else if (Array.isArray(last.content) && last.content.length > 0) {
+    const blocks = last.content.slice();
+    // Cast: cache_control is valid on the block types we actually emit (text,
+    // tool_use, tool_result, image), but the union also includes ThinkingBlockParam.
+    blocks[blocks.length - 1] = {
+      ...blocks[blocks.length - 1],
+      cache_control: ephemeral,
+    } as Anthropic.ContentBlockParam;
+    out[out.length - 1] = { ...last, content: blocks };
+  }
+  return out;
 }
 
 function isToolResultTurn(m: Anthropic.MessageParam): boolean {
