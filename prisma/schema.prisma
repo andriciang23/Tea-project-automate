@@ -1,0 +1,154 @@
+// Unified commerce data model for Tea Project Automate.
+// Every platform (Shopify / Shopee / Lazada) is normalized into these tables,
+// so the dashboard, analytics, and sync engine work against ONE schema.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ── Catalog ────────────────────────────────────────────────────────────────
+// A Product is the canonical, platform-agnostic item, keyed by SKU.
+// Each platform's version of it is a Listing pointing back to the Product.
+model Product {
+  id          String    @id @default(cuid())
+  sku         String    @unique
+  title       String
+  description String?
+  imageUrl    String?
+  costPrice   Float?    // what it costs you — used for margin analytics
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  listings    Listing[]
+  inventory   InventoryItem?
+  orderItems  OrderItem[]
+}
+
+// A Listing is one platform's representation of a Product.
+model Listing {
+  id          String   @id @default(cuid())
+  platform    String   // "shopify" | "shopee" | "lazada"
+  externalId  String   // platform's own product/item id
+  externalSku String?  // platform variant/model id if different
+  title       String
+  price       Float
+  currency    String   @default("SGD")
+  status      String   @default("active") // active | draft | archived
+  url         String?
+  raw         String?  // original payload (JSON) for debugging/round-trips
+
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([platform, externalId])
+  @@index([productId])
+}
+
+// ── Inventory ────────────────────────────────────────────────────────────────
+// One master stock figure per SKU. The sync engine pushes this number out to
+// every platform so you never oversell.
+model InventoryItem {
+  id            String   @id @default(cuid())
+  sku           String   @unique
+  available     Int      @default(0)  // master available quantity
+  reserved      Int      @default(0)  // allocated to unfulfilled orders
+  lowStockAt    Int      @default(5)  // threshold for low-stock alerts
+  location      String?
+
+  productId     String   @unique
+  product       Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  // Per-platform last-known quantities, so we can detect drift.
+  platformLevels PlatformInventoryLevel[]
+
+  updatedAt     DateTime @updatedAt
+}
+
+model PlatformInventoryLevel {
+  id              String        @id @default(cuid())
+  platform        String
+  quantity        Int           @default(0)
+  lastPushedAt    DateTime?
+  inStockExternal Boolean       @default(true)
+
+  inventoryItemId String
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  @@unique([inventoryItemId, platform])
+}
+
+// ── Orders ───────────────────────────────────────────────────────────────────
+model Order {
+  id            String      @id @default(cuid())
+  platform      String      // "shopify" | "shopee" | "lazada"
+  externalId    String      // platform order id
+  orderNumber   String      // human-facing order number
+  status        String      // unified: pending | paid | fulfilled | cancelled | refunded
+  financialStatus String?
+  fulfillmentStatus String?
+
+  customerName  String?
+  customerEmail String?
+  customerPhone String?
+
+  subtotal      Float       @default(0)
+  shipping      Float       @default(0)
+  tax           Float       @default(0)
+  total         Float       @default(0)
+  currency      String      @default("SGD")
+
+  placedAt      DateTime
+  raw           String?     // original payload (JSON)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  items         OrderItem[]
+
+  @@unique([platform, externalId])
+  @@index([placedAt])
+  @@index([status])
+}
+
+model OrderItem {
+  id          String   @id @default(cuid())
+  sku         String?
+  title       String
+  quantity    Int      @default(1)
+  price       Float    @default(0)
+  total       Float    @default(0)
+
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  productId   String?
+  product     Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([sku])
+}
+
+// ── Sync bookkeeping ─────────────────────────────────────────────────────────
+// Every sync run (orders pull, inventory push, product sync) is logged so the
+// dashboard can show connection health and the last successful sync per platform.
+model SyncLog {
+  id          String   @id @default(cuid())
+  platform    String
+  type        String   // "orders" | "inventory" | "products"
+  direction   String   // "pull" | "push"
+  status      String   // "success" | "partial" | "error"
+  recordCount Int      @default(0)
+  message     String?
+  startedAt   DateTime @default(now())
+  finishedAt  DateTime?
+
+  @@index([platform, type])
+  @@index([startedAt])
+}
