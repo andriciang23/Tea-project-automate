@@ -22,8 +22,13 @@ You (WhatsApp) ──▶ Meta WhatsApp Cloud API ──▶ POST /webhook (this a
                                   reply ──▶ WhatsApp back to you
 ```
 
-- **"Order for Jane Doe: 2 jasmine green + a 250g oolong"** → creates a draft order,
-  replies with the draft name, total, and admin link.
+- **"Order for Jane Doe: 2 jasmine green + a 250g oolong"** (text **or a photo of a
+  written order**) → the bot previews the matched items + subtotal and asks you to
+  confirm, then creates the draft and replies with its name, total, and admin link.
+- **"Jane paid"** → the bot finds the matching open draft, then completes it into a
+  real order **marked paid**, and confirms the new order number.
+- **"Save that as Jane's usual"** / **"send Jane her usual"** → remembers and reuses
+  a customer's regular order.
 - **"How much is the oolong?" / "what's our cost on jasmine?" / "do we still have it in stock?"**
   → looks it up live (price, unit cost, SKU, and quantity all come from Shopify).
 - **"What's my store URL?"** → returns it.
@@ -67,7 +72,9 @@ cp .env.example .env   # then fill it in (see below)
 In Shopify admin → **Settings → Apps and sales channels → Develop apps → Create an app**:
 
 - Configure **Admin API scopes**: `read_products`, `read_inventory`,
-  `write_draft_orders`, `read_orders`, `read_customers`, `write_customers`.
+  `read_draft_orders`, `write_draft_orders`, `read_orders`, `write_orders`,
+  `read_customers`, `write_customers`.
+  (`write_orders` is needed to mark a completed order as paid.)
 - Install the app, then copy the **Admin API access token** into `SHOPIFY_ADMIN_TOKEN`.
 - Set `SHOPIFY_STORE_DOMAIN` to your `*.myshopify.com` domain.
 
@@ -119,6 +126,33 @@ Check that:
 2. An order creates a draft in Shopify admin, tagged `whatsapp`, **not** marked paid.
 3. An ambiguous order ("send John the usual") gets a clarifying question — no draft.
 
+## Order lifecycle
+
+```
+You forward an order ──▶ bot previews it (items + subtotal + stock) ──▶ you confirm
+        ──▶ draft order created (unpaid) ──▶ you tell the bot "Jane paid"
+        ──▶ bot completes the draft into a real order, marked PAID
+```
+
+The bot never charges anyone on its own. It drafts on your confirmation and only
+records payment when you say the customer has paid.
+
+## What the bot remembers
+
+- **Conversation history, the dedup set, and saved "regulars"** are persisted to
+  `data/store.json` (gitignored) so they survive restarts. It's flushed on a clean
+  shutdown (SIGINT/SIGTERM) and written atomically.
+- **Regulars** — "save this as Jane's usual" stores the order; "send Jane her usual"
+  recalls it and runs the normal preview → confirm → create flow.
+
+## Photos & voice
+
+- **Photos** of a written/printed order are supported: the bot reads the order from
+  the image (via Claude vision), then runs the same preview → confirm → create flow.
+- **Voice notes are not supported** — transcription needs a separate speech-to-text
+  provider, which isn't wired up. The bot replies asking you to type it or send a
+  photo. (Adding STT later is a small change in `src/index.ts`.)
+
 ## Reliability details
 
 - **Multi-variant products** are handled: give the bot the size/option (e.g. "250g
@@ -133,13 +167,15 @@ Check that:
 - **Sender allow-list + signature check** — only your own number(s) are answered,
   and every webhook's `X-Hub-Signature-256` is verified against your app secret.
 
-## Notes / limitations (v1)
+## Notes / limitations
 
-- Text messages only — media/voice notes get a "please type it as text" reply.
-- Conversation history is in-memory and resets when the process restarts.
+- Text and photo messages are supported; voice notes are not (see above).
+- Persistence is a single JSON file for one process. For multiple instances or
+  high volume, swap `src/store.ts` for SQLite or Redis (same small interface).
 - Product matching is intentionally conservative: if a name maps to more than one
   product, the bot asks you which one rather than guessing.
-- No auto-charging — you always review the draft and send the invoice from Shopify.
+- The bot drafts on your confirmation and only records payment when you say so —
+  it never charges a customer by itself.
 
 ## Environment variables
 

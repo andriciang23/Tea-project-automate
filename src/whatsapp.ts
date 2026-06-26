@@ -23,7 +23,9 @@ export interface InboundMessage {
   from: string; // sender's WhatsApp number, E.164 without "+"
   text: string;
   name?: string; // sender's WhatsApp profile name, if provided
-  type: string; // message type, e.g. "text"
+  type: string; // message type, e.g. "text", "image", "audio"
+  mediaId?: string; // for image messages: the media id to download
+  caption?: string; // for image messages: optional caption
 }
 
 /**
@@ -40,13 +42,19 @@ export function parseInboundMessages(body: any): InboundMessage[] {
         const contactName: string | undefined = value?.contacts?.[0]?.profile?.name;
         for (const message of value?.messages ?? []) {
           if (!message?.id || !message?.from) continue;
-          out.push({
-            id: message.id,
-            from: message.from,
-            name: contactName,
-            type: message.type ?? "unknown",
-            text: message.type === "text" ? message.text?.body ?? "" : "",
-          });
+          const base = { id: message.id, from: message.from, name: contactName, type: message.type ?? "unknown" };
+          if (message.type === "text") {
+            out.push({ ...base, text: message.text?.body ?? "" });
+          } else if (message.type === "image") {
+            out.push({
+              ...base,
+              text: message.image?.caption ?? "",
+              mediaId: message.image?.id,
+              caption: message.image?.caption,
+            });
+          } else {
+            out.push({ ...base, text: "" });
+          }
         }
       }
     }
@@ -81,6 +89,40 @@ export async function sendText(to: string, body: string): Promise<void> {
       const detail = await res.text();
       console.error(`WhatsApp sendText failed (${res.status}): ${detail}`);
     }
+  }
+}
+
+/**
+ * Download a WhatsApp media object (e.g. an image) by its media id.
+ * Two steps: resolve the temporary media URL, then fetch the bytes (both
+ * authenticated with the WhatsApp token). Returns null on any failure.
+ */
+export async function downloadMedia(
+  mediaId: string,
+): Promise<{ base64: string; mimeType: string } | null> {
+  try {
+    const metaRes = await fetch(`${GRAPH_BASE}/${mediaId}`, {
+      headers: { Authorization: `Bearer ${config.WHATSAPP_TOKEN}` },
+    });
+    if (!metaRes.ok) {
+      console.error(`Media metadata fetch failed (${metaRes.status}): ${await metaRes.text()}`);
+      return null;
+    }
+    const meta = (await metaRes.json()) as { url?: string; mime_type?: string };
+    if (!meta.url) return null;
+
+    const binRes = await fetch(meta.url, {
+      headers: { Authorization: `Bearer ${config.WHATSAPP_TOKEN}` },
+    });
+    if (!binRes.ok) {
+      console.error(`Media download failed (${binRes.status})`);
+      return null;
+    }
+    const buf = Buffer.from(await binRes.arrayBuffer());
+    return { base64: buf.toString("base64"), mimeType: meta.mime_type ?? "image/jpeg" };
+  } catch (err) {
+    console.error("downloadMedia error:", err);
+    return null;
   }
 }
 

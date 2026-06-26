@@ -244,6 +244,15 @@ export async function getShopInfo(): Promise<ShopInfo> {
   };
 }
 
+let cachedCurrency: string | null = null;
+
+/** Store currency code (e.g. "IDR", "USD"), cached after the first lookup. */
+export async function getShopCurrency(): Promise<string> {
+  if (cachedCurrency) return cachedCurrency;
+  cachedCurrency = (await getShopInfo()).currencyCode;
+  return cachedCurrency;
+}
+
 export interface RecentOrder {
   name: string;
   customer: string | null;
@@ -413,5 +422,123 @@ export async function createDraftOrder(params: {
     total: draft.totalPriceSet.shopMoney.amount,
     currency: draft.totalPriceSet.shopMoney.currencyCode,
     adminUrl,
+  };
+}
+
+export interface OpenDraft {
+  id: string;
+  name: string;
+  customer: string | null;
+  total: string;
+  currency: string;
+  createdAt: string;
+  items: { title: string; quantity: number }[];
+}
+
+/** List open (not-yet-completed) draft orders so the agent can find one to mark paid. */
+export async function listDraftOrders(first = 25): Promise<OpenDraft[]> {
+  const data = await adminGraphQL<{
+    draftOrders: {
+      edges: {
+        node: {
+          id: string;
+          name: string;
+          createdAt: string;
+          customer: { displayName: string | null } | null;
+          totalPriceSet: { shopMoney: { amount: string; currencyCode: string } };
+          lineItems: { edges: { node: { title: string; quantity: number } }[] };
+        };
+      }[];
+    };
+  }>(
+    `query OpenDrafts($first: Int!) {
+      draftOrders(first: $first, query: "status:open", sortKey: UPDATED_AT, reverse: true) {
+        edges {
+          node {
+            id
+            name
+            createdAt
+            customer { displayName }
+            totalPriceSet { shopMoney { amount currencyCode } }
+            lineItems(first: 20) { edges { node { title quantity } } }
+          }
+        }
+      }
+    }`,
+    { first },
+  );
+  return data.draftOrders.edges.map((e) => ({
+    id: e.node.id,
+    name: e.node.name,
+    customer: e.node.customer?.displayName ?? null,
+    total: e.node.totalPriceSet.shopMoney.amount,
+    currency: e.node.totalPriceSet.shopMoney.currencyCode,
+    createdAt: e.node.createdAt,
+    items: e.node.lineItems.edges.map((li) => ({ title: li.node.title, quantity: li.node.quantity })),
+  }));
+}
+
+export interface CompletedOrder {
+  orderName: string;
+  financialStatus: string | null;
+  note: string | null;
+}
+
+/**
+ * Complete a draft order (turning it into a real order) and mark it as paid.
+ * In Admin API 2025+, completing no longer takes a paymentPending flag, so we
+ * complete first, then call orderMarkAsPaid on the resulting order.
+ */
+export async function completeDraftOrderPaid(draftId: string): Promise<CompletedOrder> {
+  const completed = await adminGraphQL<{
+    draftOrderComplete: {
+      draftOrder: { id: string; order: { id: string; name: string } | null } | null;
+      userErrors: { field: string[] | null; message: string }[];
+    };
+  }>(
+    `mutation CompleteDraft($id: ID!) {
+      draftOrderComplete(id: $id) {
+        draftOrder { id order { id name } }
+        userErrors { field message }
+      }
+    }`,
+    { id: draftId },
+  );
+
+  const cErrs = completed.draftOrderComplete.userErrors;
+  if (cErrs.length > 0) {
+    throw new Error(`draftOrderComplete failed: ${JSON.stringify(cErrs)}`);
+  }
+  const order = completed.draftOrderComplete.draftOrder?.order;
+  if (!order) throw new Error("Draft completed but no order was returned.");
+
+  const paid = await adminGraphQL<{
+    orderMarkAsPaid: {
+      order: { name: string; displayFinancialStatus: string | null } | null;
+      userErrors: { field: string[] | null; message: string }[];
+    };
+  }>(
+    `mutation MarkPaid($input: OrderMarkAsPaidInput!) {
+      orderMarkAsPaid(input: $input) {
+        order { name displayFinancialStatus }
+        userErrors { field message }
+      }
+    }`,
+    { input: { id: order.id } },
+  );
+
+  const pErrs = paid.orderMarkAsPaid.userErrors;
+  if (pErrs.length > 0) {
+    // The order exists, but recording payment failed — report so the merchant can finish in admin.
+    return {
+      orderName: order.name,
+      financialStatus: null,
+      note: `Order created, but marking it paid failed: ${pErrs.map((e) => e.message).join("; ")}`,
+    };
+  }
+  return {
+    orderName: paid.orderMarkAsPaid.order?.name ?? order.name,
+    financialStatus: paid.orderMarkAsPaid.order?.displayFinancialStatus ?? null,
+    note: null,
   };
 }

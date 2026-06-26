@@ -1,22 +1,10 @@
 import express, { type Request, type Response } from "express";
 import { config } from "./config.js";
-import { verifySignature, parseInboundMessages, sendText } from "./whatsapp.js";
-import { handleMessage } from "./agent.js";
+import { verifySignature, parseInboundMessages, sendText, downloadMedia } from "./whatsapp.js";
+import { handleMessage, handleImageMessage } from "./agent.js";
+import * as store from "./store.js";
 
-// Bounded set of recently-seen message IDs for at-least-once webhook dedup.
-const seenMessageIds = new Set<string>();
-const SEEN_LIMIT = 1000;
-
-function alreadyProcessed(id: string): boolean {
-  if (seenMessageIds.has(id)) return true;
-  seenMessageIds.add(id);
-  if (seenMessageIds.size > SEEN_LIMIT) {
-    // Drop the oldest entry (insertion order) to keep the set bounded.
-    const oldest = seenMessageIds.values().next().value;
-    if (oldest !== undefined) seenMessageIds.delete(oldest);
-  }
-  return false;
-}
+store.loadStore();
 
 const app = express();
 
@@ -67,21 +55,35 @@ async function processWebhook(body: unknown): Promise<void> {
       continue;
     }
     // Dedup: Meta may deliver the same message more than once.
-    if (alreadyProcessed(inbound.id)) {
+    if (store.hasSeen(inbound.id)) {
       console.log(`Skipping duplicate message ${inbound.id}`);
       continue;
     }
+    store.markSeen(inbound.id);
 
     try {
-      if (inbound.type !== "text") {
+      let reply: string;
+      if (inbound.type === "text") {
+        reply = await handleMessage(inbound.from, inbound.text);
+      } else if (inbound.type === "image" && inbound.mediaId) {
+        const media = await downloadMedia(inbound.mediaId);
+        if (!media) {
+          await sendText(inbound.from, "I couldn't open that photo — please resend it or type the order as text.");
+          continue;
+        }
+        reply = await handleImageMessage(inbound.from, {
+          base64: media.base64,
+          mimeType: media.mimeType,
+          caption: inbound.caption,
+        });
+      } else {
+        // Voice notes and other media aren't supported (no transcription provider wired up).
         await sendText(
           inbound.from,
-          "I can only read text right now. Please type the order or question as text.",
+          "I can read text and photos. For voice notes, please type the order or send a photo of it.",
         );
         continue;
       }
-
-      const reply = await handleMessage(inbound.from, inbound.text);
       await sendText(inbound.from, reply);
     } catch (err) {
       console.error("Error handling message:", err);
@@ -97,7 +99,18 @@ async function processWebhook(body: unknown): Promise<void> {
   }
 }
 
-app.listen(config.PORT, () => {
+const server = app.listen(config.PORT, () => {
   console.log(`WhatsApp → Shopify agent listening on port ${config.PORT}`);
   console.log(`Allowed senders: ${config.ALLOWED_SENDERS.join(", ")}`);
 });
+
+// Flush persisted state on shutdown so nothing in the debounce window is lost.
+function shutdown(signal: string) {
+  console.log(`\n${signal} received — flushing store and exiting.`);
+  store.saveNow();
+  server.close(() => process.exit(0));
+  // Don't hang forever if connections are open.
+  setTimeout(() => process.exit(0), 2000).unref();
+}
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));
