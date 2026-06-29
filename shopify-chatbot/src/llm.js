@@ -10,6 +10,7 @@
 const Anthropic = require("@anthropic-ai/sdk");
 const { intents, SITE } = require("../../shared/knowledgeBase");
 const { catalogText } = require("./productCatalog");
+const { businessFactsText } = require("../../shared/businessInfo");
 
 const MODEL = process.env.CHATBOT_MODEL || "claude-opus-4-8";
 
@@ -28,11 +29,14 @@ Voice: warm, knowledgeable and calm — like a tea sommelier. Concise: 1–3 sho
 chat-style. You may use a single tea emoji occasionally. Reply in the customer's language
 (English or Malay) when it's clear.
 
+Business facts (authoritative — use these; do not contradict them):
+${businessFactsText()}
+
 Product catalog (treat prices as "from" / indicative — point to the live product page for
 the current price; never invent products, prices, or stock you weren't given):
 ${catalogText()}
 
-Reference FAQ (use these facts; rephrase naturally):
+Reference FAQ (additional phrasing you can reuse):
 ${faqText}
 
 Rules:
